@@ -260,7 +260,7 @@ app.use('/files', express.static("files"));
 
 
 const corsOptions = {
-  origin: 'http://localhost:3000', // Your frontend's origin
+  origin: 'https://bug-free-fortnight-p46vxwj9wrj3669j-3000.app.github.dev/', // Your frontend's origin
   optionsSuccessStatus: 200,
 };
 app.use(cors(corsOptions));
