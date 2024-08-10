@@ -20,13 +20,14 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-mongoose.connect('mongodb://localhost:27017/studentmarksnew', {
+// MongoDB Atlas connection
+mongoose.connect('mongodb+srv://132429sr:cxV2moxnFYZxT2Ts@studentprofileapi.ulmm7.mongodb.net/studentmarksnew', {
   useNewUrlParser: true,
-  useUnifiedTopology: true
-}).then(() => {
-  console.log('Connected to MongoDB');
-}).catch(err => {
-  console.error('Error connecting to MongoDB:', err);
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 30000, // Increase timeout to 30 seconds
+}).then(() => console.log('Connected to MongoDB Atlas'))
+.catch(err => {
+  console.error('Error connecting to MongoDB Atlas:', err.message);
 });
 
 //Activities
@@ -92,7 +93,6 @@ app.get('/eactivity', async (req, res) => {
   }
 });
 
-
 //Student Marks
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -104,7 +104,7 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage: storage });
-//Student Marks
+
 app.post('/upload', upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).send('No file uploaded.');
@@ -173,8 +173,6 @@ app.delete('/students/:rollNo/:subjectCode', async (req, res) => {
     res.status(500).send('Internal Server Error');
   }
 });
-
-
 
 //studentdetails
 
@@ -256,11 +254,8 @@ app.get('/student/:rollNo', async (req, res) => {
 
 app.use('/files', express.static("files"));
 
-
-
-
 const corsOptions = {
-  origin: 'https://bug-free-fortnight-p46vxwj9wrj3669j-3000.app.github.dev/', // Your frontend's origin
+  origin: 'http://localhost:3001', // Your frontend's origin
   optionsSuccessStatus: 200,
 };
 app.use(cors(corsOptions));
@@ -284,152 +279,53 @@ db.connect(err => {
 
 app.post('/signup', (req, res) => {
   const { fname, lname, email, rollno, pwd, role } = req.body;
-  if (!fname || !lname || !email || !rollno || !pwd || !role) {
-    return res.status(400).json({ error: 'All fields are required' });
-  }
-
-  const hashedPwd = bcrypt.hashSync(pwd, 8);
-  const user = { fname, lname, email, rollno, pwd: hashedPwd, role };
-
-  db.query('INSERT INTO user SET ?', user, (err, result) => {
+  const hashedPassword = bcrypt.hashSync(pwd, 10);
+  const sql = 'INSERT INTO users (fname, lname, email, rollno, password, role) VALUES (?, ?, ?, ?, ?, ?)';
+  db.query(sql, [fname, lname, email, rollno, hashedPassword, role], (err, result) => {
     if (err) {
       console.error('Error signing up user:', err);
-      return res.status(400).json({ error: 'Error signing up user' });
+      res.status(500).send('Internal Server Error');
+    } else {
+      res.status(201).send('User registered');
     }
-    res.json({
-      message: 'User registered!',
-      user: { fname, lname, email, rollno, role }
-    });
   });
 });
 
 app.post('/login', (req, res) => {
-  const { email, pwd } = req.body;
-
-  if (!email || !pwd) {
-    return res.status(400).json({ message: 'Email and password are required' });
-  }
-
-  const query = 'SELECT * FROM user WHERE email = ?';
-  db.query(query, [email], (err, results) => {
+  const { email, password } = req.body;
+  const sql = 'SELECT * FROM users WHERE email = ?';
+  db.query(sql, [email], (err, results) => {
     if (err) {
-      console.error('Error executing query:', err);
-      return res.status(500).json({ message: 'Internal server error' });
-    }
-
-    if (results.length === 0) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    const user = results[0];
-
-    if (bcrypt.compareSync(pwd, user.pwd)) {
-      const token = jwt.sign({ id: user.id, role: user.role }, 'your_jwt_secret', { expiresIn: '1h' });
-      res.json({
-        message: 'Login successful!',
-        user: {
-          id: user.id,
-          role: user.role,
-          fname: user.fname,
-          lname: user.lname,
-          token
-        }
-      });
+      console.error('Error logging in:', err);
+      res.status(500).send('Internal Server Error');
+    } else if (results.length === 0) {
+      res.status(401).send('Invalid email or password');
     } else {
-      res.status(401).json({ message: 'Invalid credentials' });
+      const user = results[0];
+      if (bcrypt.compareSync(password, user.password)) {
+        const token = jwt.sign({ id: user.id, role: user.role }, 'secretkey', { expiresIn: '1h' });
+        res.json({ token });
+      } else {
+        res.status(401).send('Invalid email or password');
+      }
     }
   });
 });
 
-const markSchema = new mongoose.Schema({
-  rollNo: String,
-  name: String,
-  batch: String,
-  branch: String,
-  semester: String,
-  subject: String,
-  code: String,
-  externalMarks: String,
-  internalMarks: String,
-  grade: String,
-});
 
-const Mark = mongoose.model('Mark', markSchema);
-
-// Routes for marks
-app.post('/api/marks', async (req, res) => {
-  try {
-    const newMark = new Mark(req.body);
-    await newMark.save();
-    res.status(201).json(newMark);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.get('/api/marks/:rollNo', async (req, res) => {
-  try {
-    const marks = await Mark.find({ rollNo: req.params.rollNo });
-    res.json(marks);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.put('/api/marks/:id', async (req, res) => {
-  try {
-    const updatedMark = await Mark.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json(updatedMark);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.delete('/api/marks/:id', async (req, res) => {
-  try {
-    await Mark.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Mark deleted successfully' });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
+app.listen(5000, () => {
+  console.log('Server is running on port 5000');
 });
 
 
-app.get('/student/:rollNo', async (req, res) => {
-  try {
-    const { rollNo } = req.params;
-    
-    console.log(`Fetching details for roll number: ${rollNo}`);
-    
-    const studentDetails = await StudentDetails.findOne({ rollNo });
-    if (!studentDetails) {
-      console.error('Student details not found for roll number:', rollNo);
-      return res.status(404).send('Student details not found');
-    }
-
-    const studentMarks = await Student.find({ rollNo });
-    const cocurricularActivities = await axios.get(`http://localhost:3001/activity?rollNo=${rollNo}`);
-
-    res.json({
-      studentDetails,
-      studentMarks,
-      cocurricularActivities: cocurricularActivities.data,
-    });
-  } catch (error) {
-    console.error('Error fetching student data:', error.message);
-    res.status(500).send('Internal Server Error');
-  }
+mongoose.connection.on('connected', () => {
+  console.log('Mongoose connected to MongoDB');
 });
 
-
-app.get("/", async (req, res) => {
-  res.send("Connected");
+mongoose.connection.on('error', (err) => {
+  console.error('Mongoose connection error:', err);
 });
 
-
-
-
-
-app.listen(4000, () => {
-  console.log('Server is running on port 4000');
+mongoose.connection.on('disconnected', () => {
+  console.log('Mongoose disconnected');
 });
